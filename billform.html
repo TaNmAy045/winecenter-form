@@ -125,20 +125,38 @@
 <script>
 "use strict";
 const tg = window.Telegram && window.Telegram.WebApp;
-const inTelegram = !!(tg && tg.initData !== undefined && tg.platform && tg.platform !== "unknown");
+const inTelegram = !!(tg && tg.platform && tg.platform !== "unknown");
+// Set up Telegram first, so its Save button appears even if something below fails.
+if (inTelegram) {
+  try {
+    tg.ready();
+    tg.expand();
+    tg.MainButton.setParams({ text: "Save bill", is_visible: true, is_active: true });
+    tg.MainButton.onClick(() => save());
+  } catch (e) { /* the page's own Save button still works */ }
+}
 
-// The bot puts the bill in the link after "#": base64url of JSON. It never reaches the web host.
+// The bot puts the bill in the link after "#", as b=<base64url JSON>; it never reaches the web host.
+// Telegram appends its own parameters to the same "#" part (&tgWebAppData=...), so read b= alone.
 function readBill() {
-  const hash = location.hash.slice(1);
-  if (!hash) return null;
-  const b64 = hash.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((hash.length + 3) % 4);
+  const parts = location.hash.slice(1).split("&");
+  let data = parts.find(p => p.startsWith("b="));
+  data = data ? data.slice(2) : (parts[0] && !parts[0].includes("=") ? parts[0] : "");
+  if (!data) return null;
+  data = decodeURIComponent(data);
+  const b64 = data.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((data.length + 3) % 4);
   const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 const $ = id => document.getElementById(id);
 const inr = x => "₹" + Math.round(x).toLocaleString("en-IN");
-const bill = readBill() || { s: "Sample supplier", tp: 0, inv: "", d: "", p: [], tcsp: 2, L: [] };
+let bill = null, loadError = "";
+try { bill = readBill(); } catch (e) { loadError = "Couldn't read the bill from the link (" + e.message + "). Close this and tap Edit in form again."; }
+if (!bill) {
+  if (!loadError) loadError = "No bill in the link. Open the form from the bot's 📝 Bill form button.";
+  bill = { s: "Purchase bill", tp: "", inv: "", d: "", p: [], tcsp: 2, L: [] };
+}
 
 // ---- header fields
 $("title").textContent = bill.s || "Purchase bill";
@@ -277,16 +295,10 @@ function save() {
   else { $("errors").className = "msg good"; $("errors").textContent = "Outside Telegram. Would send: " + text; }
 }
 
-if (inTelegram) {
-  tg.ready();
-  tg.expand();
-  tg.MainButton.setText("Save bill");
-  tg.MainButton.show();
-  tg.MainButton.onClick(save);
-} else {
-  $("fallbackSave").style.display = "block";
-  $("fallbackSave").addEventListener("click", save);
-}
+// The page's own Save button is always there; Telegram's bottom button is an extra where supported.
+$("fallbackSave").style.display = "block";
+$("fallbackSave").addEventListener("click", save);
+if (loadError) { $("errors").textContent = loadError; }
 </script>
 </body>
 </html>
