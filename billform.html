@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Purchase Bill</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  /* Telegram passes its theme colours; these are the fallbacks outside Telegram. */
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --bg2: var(--tg-theme-secondary-bg-color, #f1f3f6);
+    --text: var(--tg-theme-text-color, #15171a);
+    --hint: var(--tg-theme-hint-color, #8a9099);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --line: color-mix(in srgb, var(--hint) 30%, transparent);
+    --warn: #c7841a;
+    --bad: #d14343;
+    --good: #2e9e5b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: var(--tg-theme-bg-color, #17212b);
+      --bg2: var(--tg-theme-secondary-bg-color, #0e1621);
+      --text: var(--tg-theme-text-color, #f5f5f5);
+      --hint: var(--tg-theme-hint-color, #7d8b99);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg2); color: var(--text);
+    font: 16px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    -webkit-text-size-adjust: 100%; }
+  main { max-width: 640px; margin: 0 auto; padding: 12px 12px 96px; }
+  header { padding: 4px 4px 10px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; color: var(--hint); font-size: 14px; }
+  section { background: var(--bg); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  section h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--hint); }
+  label { display: block; font-size: 13px; color: var(--hint); margin: 10px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  input, select { width: 100%; font: inherit; color: var(--text); background: var(--bg2);
+    border: 1px solid transparent; border-radius: 10px; padding: 11px 12px; min-height: 44px; outline: none; }
+  input:focus, select:focus { border-color: var(--accent); }
+  input.bad { border-color: var(--bad); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  .seg { display: flex; background: var(--bg2); border-radius: 10px; padding: 3px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit;
+    padding: 9px 0; border-radius: 8px; min-height: 40px; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--accent); font: inherit;
+    font-size: 13px; border-radius: 999px; padding: 6px 10px; white-space: nowrap; }
+  .item { border-top: 1px solid var(--line); padding: 12px 0; }
+  .item:first-of-type { border-top: 0; padding-top: 0; }
+  .item .name { font-weight: 600; }
+  .item .meta { color: var(--hint); font-size: 13px; margin-top: 2px; }
+  .item .flag { color: var(--warn); font-size: 13px; margin-top: 4px; }
+  .item .grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; margin-top: 8px; align-items: end; }
+  .item .amount { text-align: right; font-variant-numeric: tabular-nums; color: var(--hint); font-size: 14px; margin-top: 6px; }
+  .tot { display: flex; justify-content: space-between; padding: 6px 0; font-variant-numeric: tabular-nums; }
+  .tot.big { font-weight: 700; font-size: 18px; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; }
+  .note { font-size: 13px; color: var(--hint); margin-top: 6px; }
+  .msg { font-size: 14px; margin-top: 8px; }
+  .msg.bad { color: var(--bad); } .msg.good { color: var(--good); } .msg.warn { color: var(--warn); }
+  #fallbackSave { display: none; width: 100%; margin-top: 4px; border: 0; border-radius: 12px; padding: 14px;
+    font: inherit; font-weight: 600; background: var(--accent); color: var(--accent-text); }
+  .inline { display: flex; gap: 8px; align-items: center; }
+  .inline input { flex: 1; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">Purchase bill</h1>
+    <p id="subtitle"></p>
+  </header>
+
+  <section>
+    <h2>Bill</h2>
+    <label for="inv">Invoice no</label>
+    <input id="inv" autocapitalize="characters" autocomplete="off" placeholder="as printed, e.g. SW27-2700">
+    <div class="row">
+      <div><label for="date">Invoice date</label><input id="date" type="date"></div>
+      <div><label for="tp">TP no</label><input id="tp" inputmode="numeric" pattern="[0-9]*"></div>
+    </div>
+    <label for="party">Party</label>
+    <select id="party"></select>
+    <input id="partyOther" placeholder="type the supplier's name" style="display:none; margin-top:8px">
+    <label>Purchase</label>
+    <div class="seg" id="mode">
+      <button type="button" data-v="1" class="on">Credit</button>
+      <button type="button" data-v="0">Cash</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="inline" style="justify-content:space-between; margin-bottom:6px">
+      <h2 style="margin:0">Items</h2>
+      <button type="button" class="chip" id="useLast">Use last rates for empty</button>
+    </div>
+    <div class="note">Rate per case, as printed on the invoice.</div>
+    <div id="items"></div>
+  </section>
+
+  <section>
+    <h2>Totals</h2>
+    <div class="tot"><span>Gross</span><span id="gross">-</span></div>
+    <label for="sch">Scheme (amount or %)</label>
+    <input id="sch" inputmode="decimal" placeholder="0">
+    <label for="cd">Cash discount, CD (amount or %)</label>
+    <input id="cd" inputmode="decimal" placeholder="0">
+    <label for="tcs">TCS (amount or %)</label>
+    <div class="inline"><input id="tcs" inputmode="decimal"><button type="button" class="chip" id="tcs2">2%</button></div>
+    <div class="tot big"><span>Net</span><span id="net">-</span></div>
+    <label for="printed">Net printed on the bill (to check)</label>
+    <input id="printed" inputmode="decimal" placeholder="optional">
+    <div id="check" class="msg"></div>
+  </section>
+
+  <div id="errors" class="msg bad"></div>
+  <button id="fallbackSave" type="button">Save bill</button>
+</main>
+
+<script>
+"use strict";
+const tg = window.Telegram && window.Telegram.WebApp;
+const inTelegram = !!(tg && tg.initData !== undefined && tg.platform && tg.platform !== "unknown");
+
+// The bot puts the bill in the link after "#": base64url of JSON. It never reaches the web host.
+function readBill() {
+  const hash = location.hash.slice(1);
+  if (!hash) return null;
+  const b64 = hash.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((hash.length + 3) % 4);
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+const $ = id => document.getElementById(id);
+const inr = x => "₹" + Math.round(x).toLocaleString("en-IN");
+const bill = readBill() || { s: "Sample supplier", tp: 0, inv: "", d: "", p: [], tcsp: 2, L: [] };
+
+// ---- header fields
+$("title").textContent = bill.s || "Purchase bill";
+$("subtitle").textContent = [bill.tp ? "TP " + bill.tp : "", bill.L.length + " items",
+  bill.L.reduce((a, l) => a + (l[2] || 0), 0) + " bottles"].filter(Boolean).join(" · ");
+$("inv").value = bill.inv || "";
+$("date").value = bill.d || "";
+$("tp").value = bill.tp || "";
+for (const [code, name] of bill.p) $("party").add(new Option(name, code));
+$("party").add(new Option("Other (type name)…", ""));
+if (bill.pc) $("party").value = bill.pc;
+$("party").addEventListener("change", () => {
+  $("partyOther").style.display = $("party").value ? "none" : "block";
+});
+$("party").dispatchEvent(new Event("change"));
+let credit = bill.cr !== 0;
+for (const b of $("mode").children) {
+  b.classList.toggle("on", (b.dataset.v === "1") === credit);
+  b.addEventListener("click", () => {
+    credit = b.dataset.v === "1";
+    for (const x of $("mode").children) x.classList.toggle("on", x === b);
+  });
+}
+
+// ---- items: L = [name, batch, bottles, mrp, case, rate|null, last|null, flag|""]
+const itemsBox = $("items");
+bill.L.forEach((l, i) => {
+  const [name, batch, bottles, mrp, cs, rate, last, flag] = l;
+  const div = document.createElement("div");
+  div.className = "item";
+  div.innerHTML = `
+    <div class="name"></div>
+    <div class="meta"></div>
+    ${flag ? '<div class="flag"></div>' : ""}
+    <div class="grid">
+      <div><label>Bottles</label><input class="qty" inputmode="numeric" pattern="[0-9]*"></div>
+      <div><label>Rate / case of ${cs}</label><input class="rate" inputmode="decimal"></div>
+    </div>
+    <div class="amount"></div>`;
+  div.querySelector(".name").textContent = (i + 1) + ". " + name;
+  div.querySelector(".meta").textContent = [batch && "Batch " + batch, "MRP " + mrp].filter(Boolean).join(" · ");
+  if (flag) div.querySelector(".flag").textContent = flag;
+  div.querySelector(".qty").value = bottles;
+  const r = div.querySelector(".rate");
+  if (rate) r.value = rate;
+  r.placeholder = last ? "last " + last : "rate";
+  itemsBox.appendChild(div);
+});
+$("useLast").addEventListener("click", () => {
+  [...itemsBox.children].forEach((div, i) => {
+    const r = div.querySelector(".rate");
+    if (!r.value && bill.L[i][6]) r.value = bill.L[i][6];
+  });
+  update();
+});
+
+// ---- totals, same rules as the bot: CD on gross less scheme, TCS on that less CD, rounded up
+$("sch").value = bill.sch || "";
+$("cd").value = bill.cd || "";
+$("tcs").value = bill.tcs != null ? bill.tcs : (bill.tcsp ? bill.tcsp + "%" : "");
+$("printed").value = bill.net || "";
+$("tcs2").addEventListener("click", () => { $("tcs").value = (bill.tcsp || 2) + "%"; update(); });
+
+function amountOf(text, base, roundUp) {
+  const t = String(text || "").replace(/[₹,\s]/g, "").toLowerCase();
+  if (!t) return 0;
+  const m = t.match(/^(\d+(?:\.\d+)?)(%|percent|pc)?$/);
+  if (!m) return NaN;
+  const v = parseFloat(m[1]);
+  if (!m[2]) return v;
+  const a = base * v / 100;
+  return roundUp ? Math.ceil(a - 1e-9) : Math.round(a * 100) / 100;
+}
+
+function lines() {
+  return [...itemsBox.children].map((div, i) => {
+    const q = parseInt(div.querySelector(".qty").value, 10);
+    const rv = div.querySelector(".rate").value.replace(/[₹,\s]/g, "");
+    const rate = rv === "" ? null : parseFloat(rv);
+    const cs = bill.L[i][4];
+    const amount = q > 0 && rate > 0 ? Math.round(q * rate / cs) : null;
+    return { div, q, rate, amount };
+  });
+}
+
+function update() {
+  const ls = lines();
+  let gross = 0, missing = 0;
+  for (const l of ls) {
+    l.div.querySelector(".amount").textContent = l.amount != null ? inr(l.amount) : (l.rate === null ? "rate needed" : "");
+    if (l.amount != null) gross += l.amount; else missing++;
+  }
+  const sch = amountOf($("sch").value, gross, false);
+  const cd = amountOf($("cd").value, gross - sch, false);
+  const tcs = amountOf($("tcs").value, gross - sch - cd, true);
+  for (const [id, v] of [["sch", sch], ["cd", cd], ["tcs", tcs]]) $(id).classList.toggle("bad", isNaN(v));
+  const net = Math.floor(gross - sch - cd + tcs + 0.5);
+  $("gross").textContent = missing ? inr(gross) + " + " + missing + " without rate" : inr(gross);
+  $("net").textContent = isNaN(net) || missing ? "-" : inr(net);
+  const printed = parseFloat(($("printed").value || "").replace(/[₹,\s]/g, ""));
+  const check = $("check");
+  if (!printed || missing) { check.textContent = missing ? "Fill every rate (or Use last rates) to see the net." : ""; check.className = "msg"; }
+  else if (Math.abs(printed - net) <= 1) { check.textContent = "Matches the printed net."; check.className = "msg good"; }
+  else { check.textContent = "Differs from the printed net by " + inr(Math.abs(printed - net)) + ". Check rates and discounts."; check.className = "msg warn"; }
+}
+document.addEventListener("input", update);
+update();
+
+// ---- save: send the answers to the bot (Telegram closes the form)
+function collect() {
+  const errors = [];
+  if (!$("inv").value.trim()) errors.push("Invoice no is needed.");
+  if (!$("date").value) errors.push("Invoice date is needed.");
+  if (!$("party").value && !$("partyOther").value.trim()) errors.push("Choose or type the party.");
+  const ls = lines();
+  ls.forEach((l, i) => {
+    if (!(l.q > 0)) errors.push(`Item ${i + 1}: bottles?`);
+    if (l.rate !== null && !(l.rate > 0)) errors.push(`Item ${i + 1}: the rate isn't a number.`);
+  });
+  for (const id of ["sch", "cd", "tcs"]) if ($(id).classList.contains("bad")) errors.push(`${id.toUpperCase()}: an amount or a percentage like 2%.`);
+  $("errors").textContent = errors.join(" ");
+  if (errors.length) return null;
+  return {
+    id: bill.id, inv: $("inv").value.trim().toUpperCase(), d: $("date").value, tp: $("tp").value.trim(),
+    pc: $("party").value, pn: $("partyOther").value.trim(), cr: credit ? 1 : 0,
+    L: ls.map(l => [l.q, l.rate]),
+    sch: $("sch").value.trim(), cd: $("cd").value.trim(), tcs: $("tcs").value.trim(), net: $("printed").value.trim()
+  };
+}
+
+function save() {
+  const data = collect();
+  if (!data) { if (inTelegram) tg.HapticFeedback.notificationOccurred("error"); window.scrollTo(0, document.body.scrollHeight); return; }
+  const text = JSON.stringify(data);
+  if (inTelegram) tg.sendData(text);
+  else { $("errors").className = "msg good"; $("errors").textContent = "Outside Telegram. Would send: " + text; }
+}
+
+if (inTelegram) {
+  tg.ready();
+  tg.expand();
+  tg.MainButton.setText("Save bill");
+  tg.MainButton.show();
+  tg.MainButton.onClick(save);
+} else {
+  $("fallbackSave").style.display = "block";
+  $("fallbackSave").addEventListener("click", save);
+}
+</script>
+</body>
+</html>
