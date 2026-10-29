@@ -66,6 +66,8 @@
   .chip { border: 1px solid var(--line); background: transparent; color: var(--accent); font: inherit;
     font-size: 14px; border-radius: 999px; padding: 8px 12px; white-space: nowrap; }
   .inline { display: flex; gap: 8px; align-items: center; } .inline input { flex: 1; }
+  .calc { font-size: 13px; color: var(--hint); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .calc:empty { display: none; }
   .msg { font-size: 14px; margin-top: 8px; }
   .msg.bad { color: var(--bad); } .msg.good { color: var(--good); } .msg.warn { color: var(--warn); }
   #save { width: 100%; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-weight: 700;
@@ -105,10 +107,13 @@
     <div class="tot"><span>Gross</span><span id="gross">-</span></div>
     <label for="sch">Scheme (amount or %)</label>
     <input id="sch" inputmode="decimal" placeholder="0">
+    <div class="calc" id="schAmt"></div>
     <label for="cd">Cash discount, CD (amount or %)</label>
-    <input id="cd" inputmode="decimal" placeholder="0">
+    <div class="inline"><input id="cd" inputmode="decimal" placeholder="0"><button type="button" class="chip" id="cd2">2%</button></div>
+    <div class="calc" id="cdAmt"></div>
     <label for="tcs">TCS (amount or %)</label>
     <div class="inline"><input id="tcs" inputmode="decimal"><button type="button" class="chip" id="tcs2">2%</button></div>
+    <div class="calc" id="tcsAmt"></div>
     <div class="tot big"><span>Net</span><span id="net">-</span></div>
     <label for="printed">Total printed on the bill</label>
     <input id="printed" inputmode="decimal" placeholder="to check the net against">
@@ -148,7 +153,7 @@ let bill = null, loadError = "";
 try { bill = readBill(); } catch (e) { loadError = "Couldn't read the bill from the link: " + e.message; }
 if (!bill && !loadError) loadError = "This form opened without a bill. Close it and tap 📝 Bill form in the bot again.";
 bill = bill || { s: "Purchase bill", tp: "", inv: "", d: "", p: [], tcsp: 2, L: [] };
-$("diag").textContent = "form v3 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
+$("diag").textContent = "form v4 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
   " · link part " + location.hash.length + " chars, keys: " +
   location.hash.slice(1).split("&").map(p => p.split("=")[0]).join(",") + " · " + bill.L.length + " items";
 
@@ -218,6 +223,7 @@ $("cd").value = bill.cd || "";
 $("tcs").value = bill.tcs != null && bill.tcs !== "" ? bill.tcs : (bill.tcsp || 2) + "%";
 $("printed").value = bill.net || "";
 $("tcs2").addEventListener("click", () => { $("tcs").value = (bill.tcsp || 2) + "%"; update(); });
+$("cd2").addEventListener("click", () => { $("cd").value = "2%"; update(); });
 
 function amountOf(text, base, roundUp) {
   const t = String(text || "").replace(/[₹,\s]/g, "").toLowerCase();
@@ -249,7 +255,13 @@ function update() {
   const sch = amountOf($("sch").value, gross, false);
   const cd = amountOf($("cd").value, gross - sch, false);
   const tcs = amountOf($("tcs").value, gross - sch - cd, true);
-  for (const [id, v] of [["sch", sch], ["cd", cd], ["tcs", tcs]]) $(id).classList.toggle("bad", isNaN(v));
+  const bases = { sch: "gross", cd: "gross less scheme", tcs: "gross less scheme and CD" };
+  for (const [id, v] of [["sch", sch], ["cd", cd], ["tcs", tcs]]) {
+    $(id).classList.toggle("bad", isNaN(v));
+    // A percentage shows what it comes to, so it can be checked against the bill.
+    const pct = /%|percent|pc/i.test($(id).value);
+    $(id + "Amt").textContent = pct && !isNaN(v) && !missing ? `= ${inr(v)} (${$(id).value.trim()} of ${bases[id]})` : "";
+  }
   const net = Math.floor(gross - sch - cd + tcs + 0.5);
   $("gross").textContent = missing ? inr(gross) + " (" + missing + " without rate)" : inr(gross);
   $("net").textContent = isNaN(net) || missing ? "–" : inr(net);
