@@ -93,6 +93,10 @@
     border-radius: 999px; padding: 7px 12px; white-space: nowrap; }
   details.bill.crossed .xbtn { border-color: var(--accent); color: var(--accent); }
   .item .flag.new { color: var(--bad); font-weight: 600; }
+  .item .pick { margin-top: 6px; }
+  .item .pick label { margin: 0 0 3px; }
+  .item .pick select { min-height: 40px; padding: 8px 10px; font-size: 15px; }
+  .item .ontp { font-size: 12px; color: var(--hint); margin-top: 2px; }
   .msg { font-size: 14px; margin-top: 8px; } .msg.good { color: var(--good); } .msg.warn { color: var(--warn); } .msg.bad { color: var(--bad); }
   #save { width: 100%; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-weight: 700;
     background: var(--accent); color: var(--accent-text); margin-top: 6px; }
@@ -151,7 +155,7 @@ function amountOf(text, base, roundUp) {
 }
 
 $("title").textContent = data.title || "Purchase bills";
-$("diag").textContent = "bills form v3 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
+$("diag").textContent = "bills form v4 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
   " · " + data.B.length + " bills";
 
 // ---- one collapsible row per bill
@@ -210,10 +214,11 @@ const views = data.B.map((b, bi) => {
     btn.addEventListener("click", () => { credit = btn.dataset.v === "1"; for (const x of seg.children) x.classList.toggle("on", x === btn); });
   }
   b.L.forEach((l, i) => {
-    const [name, batch, n, mrp, cs, rate, last, flag] = l;
+    const [name, batch, n, mrp, cs, rate, last, flag, choices, printedName] = l;
     const it = document.createElement("div");
     it.className = "item";
     it.innerHTML = '<div class="name"></div><div class="meta"></div>' + (flag ? '<div class="flag"></div>' : "") +
+      (choices ? '<div class="ontp"></div><div class="pick"><label>AUTOSOFT item (check it is the right one)</label><select class="choice"></select></div>' : "") +
       '<div class="rr"><input class="rate" inputmode="decimal" aria-label="box rate"><div class="amt"></div></div><div class="src"></div>';
     it.querySelector(".name").textContent = (i + 1) + ". " + name;
     it.querySelector(".meta").textContent = [batch && "Batch " + batch, "MRP " + mrp, n + " btl", "case of " + cs].filter(Boolean).join(" · ");
@@ -224,6 +229,21 @@ const views = data.B.map((b, bi) => {
     const input = it.querySelector(".rate");
     input.value = rate || last || "";
     input.dataset.start = input.value;
+    if (choices) {
+      it.querySelector(".ontp").textContent = "On the TP: " + printedName;
+      const pick = it.querySelector(".choice");
+      for (const [code, cname] of choices) pick.add(new Option(cname, code));
+      pick.addEventListener("change", () => {
+        // A different item has a different last rate; switch to it unless a rate was typed.
+        const lastFor = (choices.find(c => c[0] === pick.value) || [])[2];
+        if (!rate && input.value === (input.dataset.shown || input.dataset.start) && lastFor) {
+          input.value = lastFor;
+          input.dataset.shown = String(lastFor);
+        }
+        it.querySelector(".name").textContent = (i + 1) + ". " + pick.selectedOptions[0].text;
+        update();
+      });
+    }
     const src = it.querySelector(".src");
     if (rate) src.textContent = "Box rate as read from the bill";
     else if (last) { src.textContent = "Last purchase rate – check against the bill"; src.classList.add("last"); }
@@ -328,10 +348,14 @@ function save() {
     const bad = ls.findIndex(l => !(l.rate > 0));
     if (bad >= 0) { errors.push(`TP ${v.b.tp}: item ${bad + 1} needs a box rate.`); v.el.open = true; continue; }
     if (["sch", "cd", "tcs"].some(k => v.q("." + k).classList.contains("bad"))) { errors.push(`TP ${v.b.tp}: scheme, CD and TCS are amounts or percentages like 2%.`); v.el.open = true; continue; }
-    const R = {};
-    ls.forEach((l, i) => { if (l.input.value !== l.input.dataset.start) R[i] = l.rate; });
+    const R = {}, I = {};
+    ls.forEach((l, i) => {
+      if (l.input.value !== l.input.dataset.start) R[i] = l.rate;
+      const pick = l.it.querySelector(".choice");
+      if (pick) I[i] = pick.value;  // saving confirms the item shown
+    });
     out.push({ id: v.b.id, inv: inv.toUpperCase(), d: v.q(".date").value, tp: v.q(".tp").value.trim(), pc: v.q(".party").value,
-               cr: v.credit() ? 1 : 0, R, sch: v.q(".sch").value.trim(), cd: v.q(".cd").value.trim(),
+               cr: v.credit() ? 1 : 0, R, I, sch: v.q(".sch").value.trim(), cd: v.q(".cd").value.trim(),
                tcs: v.q(".tcs").value.trim(), net: v.q(".printed").value.trim() });
   }
   if (!out.length && !X.length && !errors.length) errors.push("Type the invoice no of at least one bill, or cross one out.");
