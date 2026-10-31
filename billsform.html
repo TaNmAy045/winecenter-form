@@ -83,6 +83,16 @@
   .chip { border: 1px solid var(--line); background: transparent; color: var(--accent); font: inherit; font-size: 14px;
     border-radius: 999px; padding: 8px 12px; white-space: nowrap; }
   .calc { font-size: 13px; color: var(--hint); margin-top: 4px; } .calc:empty { display: none; }
+  .status.gone { color: var(--hint); background: rgba(128, 128, 128, .15); }
+  details.bill.crossed { opacity: .6; border-left-color: var(--hint); }
+  details.bill.crossed .who b { text-decoration: line-through; }
+  details.bill.crossed .body > :not(.xbar) { display: none; }
+  .xbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
+  .xbar .why { font-size: 13px; color: var(--bad); }
+  .xbtn { border: 1px solid var(--bad); color: var(--bad); background: transparent; font: inherit; font-size: 14px;
+    border-radius: 999px; padding: 7px 12px; white-space: nowrap; }
+  details.bill.crossed .xbtn { border-color: var(--accent); color: var(--accent); }
+  .item .flag.new { color: var(--bad); font-weight: 600; }
   .msg { font-size: 14px; margin-top: 8px; } .msg.good { color: var(--good); } .msg.warn { color: var(--warn); } .msg.bad { color: var(--bad); }
   #save { width: 100%; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-weight: 700;
     background: var(--accent); color: var(--accent-text); margin-top: 6px; }
@@ -141,7 +151,7 @@ function amountOf(text, base, roundUp) {
 }
 
 $("title").textContent = data.title || "Purchase bills";
-$("diag").textContent = "bills form v2 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
+$("diag").textContent = "bills form v3 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
   " · " + data.B.length + " bills";
 
 // ---- one collapsible row per bill
@@ -156,6 +166,7 @@ const views = data.B.map((b, bi) => {
       <span class="status todo"></span>
     </summary>
     <div class="body">
+      <div class="xbar"><span class="why"></span><button type="button" class="xbtn">✕ Cross out this TP</button></div>
       <label>Invoice no (as printed on the bill)</label>
       <input class="inv" autocapitalize="characters" autocomplete="off" placeholder="type the invoice no">
       <div class="row">
@@ -206,7 +217,10 @@ const views = data.B.map((b, bi) => {
       '<div class="rr"><input class="rate" inputmode="decimal" aria-label="box rate"><div class="amt"></div></div><div class="src"></div>';
     it.querySelector(".name").textContent = (i + 1) + ". " + name;
     it.querySelector(".meta").textContent = [batch && "Batch " + batch, "MRP " + mrp, n + " btl", "case of " + cs].filter(Boolean).join(" · ");
-    if (flag) it.querySelector(".flag").textContent = flag;
+    if (flag) {
+      it.querySelector(".flag").textContent = flag;
+      if (/^Not in/.test(flag)) it.querySelector(".flag").classList.add("new");
+    }
     const input = it.querySelector(".rate");
     input.value = rate || last || "";
     input.dataset.start = input.value;
@@ -216,6 +230,10 @@ const views = data.B.map((b, bi) => {
     else { src.textContent = "No rate yet – type the box rate"; src.classList.add("last"); }
     q(".items").appendChild(it);
   });
+  const unknown = b.L.filter(l => /^Not in/.test(l[7] || "")).map(l => l[0]);
+  if (unknown.length) q(".why").textContent = unknown.length + (unknown.length > 1 ? " items aren't" : " item isn't") + " in AUTOSOFT yet";
+  let crossed = !!b.x;
+  q(".xbtn").addEventListener("click", () => { crossed = !crossed; update(); });
   q(".sch").value = b.sch || "";
   q(".cd").value = b.cd || "";
   q(".tcs").value = b.tcs != null && b.tcs !== "" ? b.tcs : (data.tcsp || 2) + "%";
@@ -265,12 +283,18 @@ const views = data.B.map((b, bi) => {
     }
     else { check.textContent = "Differs from the printed total by " + inr(Math.abs(printed - net)) + ". Check the box rates, scheme and CD."; check.className = "check msg warn"; status = "Check net"; cls = "bad"; }
     if (!inv && !missing) status = "Invoice no?";
+    if (unknown.length && !crossed) { status = unknown.length + " new item" + (unknown.length > 1 ? "s" : ""); cls = "bad"; }
     const chip = q(".status");
     chip.textContent = status;
     chip.className = "status " + cls;
+    el.classList.toggle("crossed", crossed);
+    q(".xbtn").textContent = crossed ? "↺ Restore this TP" : "✕ Cross out this TP";
+    if (crossed) { status = "Crossed out"; cls = "gone"; chip.textContent = status; chip.className = "status gone"; }
     el.classList.toggle("st-ok", cls === "ok");
     el.classList.toggle("st-bad", cls === "bad");
-    view.ready = !!inv && !missing && cls !== "bad" && !["sch", "cd", "tcs"].some(k => q("." + k).classList.contains("bad"));
+    view.ready = !crossed && !!inv && !missing && cls !== "bad" && !["sch", "cd", "tcs"].some(k => q("." + k).classList.contains("bad"));
+    view.crossed = crossed;
+    view.unknown = unknown;
     refreshProgress();
   }
   el.addEventListener("input", update);
@@ -280,8 +304,10 @@ const views = data.B.map((b, bi) => {
 
 function refreshProgress() {
   const ready = views.filter(v => v.ready).length;
-  $("progress").textContent = ready + " of " + views.length + " bills ready to save";
-  const label = ready ? `Save ${ready} bill${ready > 1 ? "s" : ""}` : "Save bills";
+  const crossed = views.filter(v => v.crossed).length;
+  $("progress").textContent = ready + " of " + (views.length - crossed) + " bills ready to save" +
+    (crossed ? " · " + crossed + " crossed out" : "");
+  const label = ready ? `Save ${ready} bill${ready > 1 ? "s" : ""}` : (crossed ? "Save" : "Save bills");
   $("save").textContent = label;
   if (inTelegram) try { tg.MainButton.setText(label); } catch (e) {}
 }
@@ -292,7 +318,10 @@ if (views.length === 1) views[0].el.open = true;
 function save() {
   const errors = [];
   const out = [];
+  const X = [];
   for (const v of views) {
+    if (v.crossed) { if (!v.b.x) X.push(v.b.id); continue; }
+    if (v.b.x) X.push("+" + v.b.id);  // restored: no longer set aside
     const inv = v.q(".inv").value.trim();
     if (!inv) continue;
     const ls = v.lines();
@@ -305,8 +334,8 @@ function save() {
                cr: v.credit() ? 1 : 0, R, sch: v.q(".sch").value.trim(), cd: v.q(".cd").value.trim(),
                tcs: v.q(".tcs").value.trim(), net: v.q(".printed").value.trim() });
   }
-  if (!out.length && !errors.length) errors.push("Type the invoice no of at least one bill.");
-  const text = JSON.stringify({ v: 2, B: out });
+  if (!out.length && !X.length && !errors.length) errors.push("Type the invoice no of at least one bill, or cross one out.");
+  const text = JSON.stringify({ v: 2, B: out, X });
   if (text.length > 4000) errors.push("Too much to send at once: save about half the bills, then open the form again for the rest.");
   $("errors").className = "msg bad";
   $("errors").textContent = errors.join(" ");
