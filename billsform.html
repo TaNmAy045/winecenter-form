@@ -31,8 +31,21 @@
   header { padding: 2px 4px 10px; }
   h1 { margin: 0; font-size: 19px; }
   .sub { color: var(--hint); font-size: 14px; margin-top: 2px; }
-  details.bill { background: var(--bg); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
-  details.bill > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px; cursor: pointer; }
+  /* Each bill stands apart from the page: an outline, a tinted header band, and a strip on the left
+     in the colour of its status. The open bill is tinted more strongly and lifted. */
+  :root { --tint: rgba(36, 129, 204, .07); --tint-open: rgba(36, 129, 204, .16); --edge: rgba(36, 129, 204, .28); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --tint: rgba(110, 170, 230, .10); --tint-open: rgba(110, 170, 230, .20); --edge: rgba(110, 170, 230, .30); }
+  }
+  details.bill { background: var(--bg); border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+    border: 1px solid var(--edge); border-left: 6px solid var(--warn); }
+  details.bill.st-ok { border-left-color: var(--good); }
+  details.bill.st-bad { border-left-color: var(--bad); }
+  details.bill[open] { box-shadow: 0 4px 14px rgba(0, 0, 0, .15); border-color: var(--accent); border-left-width: 6px; }
+  details.bill > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px; cursor: pointer;
+    background: var(--tint); }
+  details.bill[open] > summary { background: var(--tint-open); }
+  details.bill:nth-of-type(even):not([open]) > summary { background: rgba(128, 128, 128, .06); }
   details.bill > summary::-webkit-details-marker { display: none; }
   .chev { color: var(--hint); transition: transform .15s; flex: none; }
   details[open] .chev { transform: rotate(90deg); }
@@ -128,7 +141,7 @@ function amountOf(text, base, roundUp) {
 }
 
 $("title").textContent = data.title || "Purchase bills";
-$("diag").textContent = "bills form v1 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
+$("diag").textContent = "bills form v2 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
   " · " + data.B.length + " bills";
 
 // ---- one collapsible row per bill
@@ -255,6 +268,8 @@ const views = data.B.map((b, bi) => {
     const chip = q(".status");
     chip.textContent = status;
     chip.className = "status " + cls;
+    el.classList.toggle("st-ok", cls === "ok");
+    el.classList.toggle("st-bad", cls === "bad");
     view.ready = !!inv && !missing && cls !== "bad" && !["sch", "cd", "tcs"].some(k => q("." + k).classList.contains("bad"));
     refreshProgress();
   }
