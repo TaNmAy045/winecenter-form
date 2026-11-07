@@ -102,6 +102,9 @@
   .newitem label { margin: 8px 0 3px; }
   .newitem input, .newitem select { min-height: 40px; padding: 8px 10px; font-size: 15px; }
   .newitem .nhint { font-size: 12px; color: var(--hint); margin-top: 3px; }
+  .okrate { margin-top: 6px; border: 1px solid var(--bad); color: var(--bad); background: transparent; font: inherit;
+    font-size: 14px; border-radius: 999px; padding: 7px 12px; }
+  .okrate.on { border-color: var(--good); color: var(--good); background: rgba(46, 158, 91, .12); }
   .msg { font-size: 14px; margin-top: 8px; } .msg.good { color: var(--good); } .msg.warn { color: var(--warn); } .msg.bad { color: var(--bad); }
   #save { width: 100%; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-weight: 700;
     background: var(--accent); color: var(--accent-text); margin-top: 6px; }
@@ -160,7 +163,7 @@ function amountOf(text, base, roundUp) {
 }
 
 $("title").textContent = data.title || "Purchase bills";
-$("diag").textContent = "bills form v5 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
+$("diag").textContent = "bills form v6 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
   " · " + data.B.length + " bills";
 
 // ---- one collapsible row per bill
@@ -228,12 +231,13 @@ const views = data.B.map((b, bi) => {
         '<label>Brand (the brand name only)</label><input class="nbrand" maxlength="30" autocapitalize="characters" autocomplete="off"><div class="nhint"></div>' +
         '<label>Item name (brand, flavour and size)</label><input class="nname" maxlength="40" autocapitalize="characters" autocomplete="off">' +
         '<label>Group</label><select class="ngroup"></select></div>' : "") +
-      '<div class="rr"><input class="rate" inputmode="decimal" aria-label="box rate"><div class="amt"></div></div><div class="src"></div>';
+      '<div class="rr"><input class="rate" inputmode="decimal" aria-label="box rate"><div class="amt"></div></div><div class="src"></div>' +
+      (/MRP changed/.test(flag || "") ? '<button type="button" class="okrate">✓ Matches the bill</button>' : "");
     it.querySelector(".name").textContent = (i + 1) + ". " + name;
     it.querySelector(".meta").textContent = [batch && "Batch " + batch, "MRP " + mrp, n + " btl", "case of " + cs].filter(Boolean).join(" · ");
     if (flag) {
       it.querySelector(".flag").textContent = flag;
-      if (/^Not in/.test(flag)) it.querySelector(".flag").classList.add("new");
+      if (/^Not in|MRP changed/.test(flag)) it.querySelector(".flag").classList.add("new");
     }
     const input = it.querySelector(".rate");
     input.value = rate || last || "";
@@ -288,6 +292,14 @@ const views = data.B.map((b, bi) => {
       });
       explain();
     }
+    else if (/MRP changed/.test(flag || "")) {
+      // A new MRP means a new box rate: the owner confirms it against the bill, or types the bill's rate.
+      src.textContent = (rate ? "Box rate saved earlier" : "Worked out from the new MRP") +
+        " – check it on the bill: tap ✓ if it matches, or type the bill's rate";
+      src.classList.add("last");
+      const ok = it.querySelector(".okrate");
+      ok.addEventListener("click", () => { ok.classList.toggle("on"); ok.textContent = ok.classList.contains("on") ? "✓ Confirmed" : "✓ Matches the bill"; update(); });
+    }
     else if (rate) src.textContent = "Box rate as read from the bill";
     else if (last) { src.textContent = "Last purchase rate – check against the bill"; src.classList.add("last"); }
     else { src.textContent = "No rate yet – type the box rate"; src.classList.add("last"); }
@@ -312,7 +324,9 @@ const views = data.B.map((b, bi) => {
       const rv = input.value.replace(/[₹,\s]/g, "");
       const r = rv === "" ? null : parseFloat(rv);
       const [, , n, , cs] = b.L[i];
-      return { it, input, rate: r, amount: r > 0 ? Math.round(n * r / cs) : null };
+      const ok = it.querySelector(".okrate");
+      const unchecked = !!ok && !ok.classList.contains("on") && input.value === input.dataset.start;
+      return { it, input, rate: r, amount: r > 0 ? Math.round(n * r / cs) : null, unchecked };
     });
   }
   function update() {
@@ -349,6 +363,8 @@ const views = data.B.map((b, bi) => {
     if (!inv && !missing) status = "Invoice no?";
     const unnamed = [...q(".items").querySelectorAll(".newitem")].some(n => !n.querySelector(".nbrand").value.trim() || !n.querySelector(".nname").value.trim());
     if (unnamed && !crossed) { status = "Name new items"; cls = "bad"; }
+    const unchecked = lines().filter(l => l.unchecked).length;
+    if (unchecked && !crossed) { status = "Check " + unchecked + " rate" + (unchecked > 1 ? "s" : ""); cls = "bad"; }
     const chip = q(".status");
     chip.textContent = status;
     chip.className = "status " + cls;
@@ -407,6 +423,8 @@ function save() {
       }
     });
     if (unnamed) { errors.push(`TP ${v.b.tp}: new item ${unnamed} needs a brand and an item name.`); v.el.open = true; continue; }
+    const unchecked = ls.filter(l => l.unchecked).length;
+    if (unchecked) { errors.push(`TP ${v.b.tp}: ${unchecked} item(s) have a new MRP; check their box rates on the bill (tap ✓ or type the rate).`); v.el.open = true; continue; }
     out.push({ id: v.b.id, inv: inv.toUpperCase(), d: v.q(".date").value, tp: v.q(".tp").value.trim(), pc: v.q(".party").value,
                cr: v.credit() ? 1 : 0, R, I, N, sch: v.q(".sch").value.trim(), cd: v.q(".cd").value.trim(),
                tcs: v.q(".tcs").value.trim(), net: v.q(".printed").value.trim() });
