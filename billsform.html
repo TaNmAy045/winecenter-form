@@ -105,6 +105,11 @@
   .okrate { margin-top: 6px; border: 1px solid var(--bad); color: var(--bad); background: transparent; font: inherit;
     font-size: 14px; border-radius: 999px; padding: 7px 12px; }
   .okrate.on { border-color: var(--good); color: var(--good); background: rgba(46, 158, 91, .12); }
+  .edit { font-size: 13px; color: var(--accent); background: none; border: 0; padding: 4px 0; font: inherit; font-size: 13px; }
+  .eitem { display: none; gap: 6px; margin-top: 6px; } .eitem.on { display: flex; }
+  .eitem > div { flex: 1; min-width: 0; } .eitem label { margin: 0 0 2px; }
+  .eitem input { min-height: 38px; padding: 6px 8px; font-size: 15px; }
+  .eitem input.changed, .eitem input.bad { border-color: var(--warn); }
   .msg { font-size: 14px; margin-top: 8px; } .msg.good { color: var(--good); } .msg.warn { color: var(--warn); } .msg.bad { color: var(--bad); }
   #save { width: 100%; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-weight: 700;
     background: var(--accent); color: var(--accent-text); margin-top: 6px; }
@@ -163,7 +168,7 @@ function amountOf(text, base, roundUp) {
 }
 
 $("title").textContent = data.title || "Purchase bills";
-$("diag").textContent = "bills form v6 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
+$("diag").textContent = "bills form v7 · " + (inTelegram ? "Telegram " + tg.platform + " " + tg.version : "browser") +
   " · " + data.B.length + " bills";
 
 // ---- one collapsible row per bill
@@ -225,7 +230,12 @@ const views = data.B.map((b, bi) => {
     const [name, batch, n, mrp, cs, rate, last, flag, choices, printedName, make] = l;
     const it = document.createElement("div");
     it.className = "item";
-    it.innerHTML = '<div class="name"></div><div class="meta"></div>' + (flag ? '<div class="flag"></div>' : "") +
+    it.innerHTML = '<div class="name"></div><div class="meta"></div>' +
+      '<button type="button" class="edit">✎ Edit bottles / batch / MRP</button>' +
+      '<div class="eitem"><div><label>Bottles</label><input class="ebtl" inputmode="numeric"></div>' +
+      '<div><label>Batch</label><input class="ebatch" autocapitalize="characters"></div>' +
+      '<div><label>MRP</label><input class="emrp" inputmode="decimal"></div></div>' +
+      (flag ? '<div class="flag"></div>' : "") +
       (choices ? '<div class="ontp"></div><div class="pick"><label>AUTOSOFT item (check it is the right one)</label><select class="choice"></select></div>' : "") +
       (make ? '<div class="newitem"><div class="nhead">＋ New item: created in AUTOSOFT when you save</div>' +
         '<label>Brand (the brand name only)</label><input class="nbrand" maxlength="30" autocapitalize="characters" autocomplete="off"><div class="nhint"></div>' +
@@ -235,6 +245,11 @@ const views = data.B.map((b, bi) => {
       (/MRP changed/.test(flag || "") ? '<button type="button" class="okrate">✓ Matches the bill</button>' : "");
     it.querySelector(".name").textContent = (i + 1) + ". " + name;
     it.querySelector(".meta").textContent = [batch && "Batch " + batch, "MRP " + mrp, n + " btl", "case of " + cs].filter(Boolean).join(" · ");
+    // Bottles, batch and MRP come from the TP; they can be changed here (the review shows what differs).
+    const eb = it.querySelector(".ebtl"), ea = it.querySelector(".ebatch"), em = it.querySelector(".emrp");
+    eb.value = n; ea.value = batch || ""; em.value = mrp;
+    for (const [box, start] of [[eb, String(n)], [ea, batch || ""], [em, String(mrp)]]) box.dataset.start = start;
+    it.querySelector(".edit").addEventListener("click", () => it.querySelector(".eitem").classList.toggle("on"));
     if (flag) {
       it.querySelector(".flag").textContent = flag;
       if (/^Not in|MRP changed/.test(flag)) it.querySelector(".flag").classList.add("new");
@@ -323,7 +338,9 @@ const views = data.B.map((b, bi) => {
       const input = it.querySelector(".rate");
       const rv = input.value.replace(/[₹,\s]/g, "");
       const r = rv === "" ? null : parseFloat(rv);
-      const [, , n, , cs] = b.L[i];
+      const [, , n0, , cs] = b.L[i];
+      const eb = it.querySelector(".ebtl");
+      const n = eb && /^\d+$/.test(eb.value.trim()) ? parseInt(eb.value, 10) : n0;
       const ok = it.querySelector(".okrate");
       const unchecked = !!ok && !ok.classList.contains("on") && input.value === input.dataset.start;
       return { it, input, rate: r, amount: r > 0 ? Math.round(n * r / cs) : null, unchecked };
@@ -332,6 +349,11 @@ const views = data.B.map((b, bi) => {
   function update() {
     let gross = 0, missing = 0;
     for (const l of lines()) {
+      for (const box of l.it.querySelectorAll(".eitem input")) {
+        box.classList.toggle("changed", box.value.trim() !== box.dataset.start);
+        box.classList.toggle("bad", (box.classList.contains("ebtl") && !/^\d+$/.test(box.value.trim())) ||
+                                    (box.classList.contains("emrp") && !(parseFloat(box.value) > 0)));
+      }
       l.it.querySelector(".amt").textContent = l.amount != null ? inr(l.amount) : "–";
       l.input.classList.toggle("changed", l.input.value !== l.input.dataset.start);
       l.input.classList.toggle("bad", l.rate !== null && !(l.rate > 0));
@@ -409,9 +431,13 @@ function save() {
     const bad = ls.findIndex(l => !(l.rate > 0));
     if (bad >= 0) { errors.push(`TP ${v.b.tp}: item ${bad + 1} needs a box rate.`); v.el.open = true; continue; }
     if (["sch", "cd", "tcs"].some(k => v.q("." + k).classList.contains("bad"))) { errors.push(`TP ${v.b.tp}: scheme, CD and TCS are amounts or percentages like 2%.`); v.el.open = true; continue; }
-    const R = {}, I = {}, N = {};
-    let unnamed = 0;
+    const R = {}, I = {}, N = {}, E = {};
+    let unnamed = 0, badItem = 0;
     ls.forEach((l, i) => {
+      const boxes = [...l.it.querySelectorAll(".eitem input")];
+      if (boxes.some(x => x.classList.contains("bad"))) badItem = i + 1;
+      if (boxes.some(x => x.value.trim() !== x.dataset.start))
+        E[i] = [parseInt(boxes[0].value, 10), boxes[1].value.trim().toUpperCase(), parseFloat(boxes[2].value)];
       if (l.input.value !== l.input.dataset.start) R[i] = l.rate;
       const pick = l.it.querySelector(".choice");
       if (pick) I[i] = pick.value;  // saving confirms the item shown
@@ -423,10 +449,11 @@ function save() {
       }
     });
     if (unnamed) { errors.push(`TP ${v.b.tp}: new item ${unnamed} needs a brand and an item name.`); v.el.open = true; continue; }
+    if (badItem) { errors.push(`TP ${v.b.tp}: item ${badItem} needs whole bottles and an MRP.`); v.el.open = true; continue; }
     const unchecked = ls.filter(l => l.unchecked).length;
     if (unchecked) { errors.push(`TP ${v.b.tp}: ${unchecked} item(s) have a new MRP; check their box rates on the bill (tap ✓ or type the rate).`); v.el.open = true; continue; }
     out.push({ id: v.b.id, inv: inv.toUpperCase(), d: v.q(".date").value, tp: v.q(".tp").value.trim(), pc: v.q(".party").value,
-               cr: v.credit() ? 1 : 0, R, I, N, sch: v.q(".sch").value.trim(), cd: v.q(".cd").value.trim(),
+               cr: v.credit() ? 1 : 0, R, I, N, E, sch: v.q(".sch").value.trim(), cd: v.q(".cd").value.trim(),
                tcs: v.q(".tcs").value.trim(), net: v.q(".printed").value.trim() });
   }
   if (!out.length && !X.length && !errors.length) errors.push("Type the invoice no of at least one bill, or cross one out.");
